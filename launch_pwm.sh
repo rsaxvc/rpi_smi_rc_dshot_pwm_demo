@@ -2,5 +2,5 @@
 set -e
 sudo modprobe bcm2835_smi
 sudo modprobe bcm2835_smi_dev
-gcc main.c
+gcc rc_pwm_demo.c -lm
 ./a.out
