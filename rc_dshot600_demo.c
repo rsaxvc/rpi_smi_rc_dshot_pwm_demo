@@ -1,5 +1,5 @@
 //RSAXVC
-//Program to transmit RC PWM using RPI SMI and CPU delays
+//Program to transmit DSHOT600 using RPi SMI bus interface
 #include <fcntl.h>
 #include <malloc.h>
 #include <math.h>
@@ -17,18 +17,19 @@ static void fail(const char *msg) {
 }
 
 #define SMI_CLK 125e6
+#define DMA_MAX 2048 //Max physically contig from memalign()
 #define WRITE_STROBE_MASK 0x7F
-#define WRITE_STROBE_CYCLES WRITE_STROBE_MASK
-#define RC_MIN_US 1000
-#define RC_MAX_US 2000
-#define RC_SPAN_US (RC_MAX_US - RC_MIN_US)
-#define DMA_COUNT (int)((RC_MAX_US * 1e6) / (SMI_CLK / WRITE_STROBE_CYCLES) + 2)
-//static_assert(DMA_COUNT < 2048);//Max physically contig from memalign()
+#define WRITE_STROBE_CYCLES 12
+//static_assert(WRITE_STROBE_CYCLE <= WRITE_STROBE_MASK);
+#define DSHOT_BITS 16
+#define DSHOT600_DMA_PER_BIT 16 //must be < MASK, and DMA_PER_BIT * BITS must be < DMA_MAX
+#define DSHOT600_DMA_PER_ZRO 6
+#define DSHOT600_DMA_PER_ONE 12
+#define DMA_COUNT (int)(DSHOT600_DMA_PER_BIT * DSHOT_BITS)
+//static_assert(DMA_COUNT < DMA_MAX);
 #define DMA_BYTES_PER_CLOCK 2
 #define DMA_TX_TIME ((DMA_COUNT) * (WRITE_STROBE_CYCLES) / SMI_CLK)
 #define DMA_TX_TIME_US (DMA_TX_TIME * 1e6)
-#define PWM_HZ 50.0
-#define PWM_TX_TIME_US (1e6/PWM_HZ)
 
 static void print_smi_settings(struct smi_settings *settings) {
   printf("dma_count: %u\n", DMA_COUNT);
@@ -62,18 +63,6 @@ int main(int argc, char **argv) {
 
   while ((opt = getopt(argc, argv, "b:e:s:h:p:wE:S:H:P:")) != -1) {
     switch (opt) {
-    case 'e':
-      settings.read_setup_time = atoi(optarg);
-      break;
-    case 's':
-      settings.read_strobe_time = atoi(optarg);
-      break;
-    case 'h':
-      settings.read_hold_time = atoi(optarg);
-      break;
-    case 'p':
-      settings.read_pace_time = atoi(optarg);
-      break;
     case 'E':
       settings.write_setup_time = atoi(optarg);
       break;
@@ -96,15 +85,28 @@ int main(int argc, char **argv) {
   uint16_t * buffer = memalign(4096, DMA_COUNT * DMA_BYTES_PER_CLOCK);
   while(1){
     for(int pwm = 0; pwm < 100; pwm++){
-      int rc_us = RC_MIN_US + (RC_SPAN_US * pwm / 100);
-      int rc_on = rint(rc_us * 1e6 / (SMI_CLK / WRITE_STROBE_CYCLES));
-      for (int i=0; i<DMA_COUNT; i++) buffer[i] = i < rc_on ? 0xFFFF : 0;
-      //for (int i=0; i<DMA_COUNT; i++) buffer[i] = i < DMA_COUNT - 1 ? 0xFFFF : 0;//Full frame for scoping
-      buffer[1] = 0;//Glitch for scoping
-      buffer[DMA_COUNT-1] = 0;//TX zero in the gap
+      unsigned throttle11 = 2000 * pwm / 100;
+      unsigned telem1 = 0;
+      unsigned upper12 = (throttle11 << 1) | telem1;
+      unsigned crc4 = (upper12 ^ (upper12 >> 4) ^ (upper12 >> 8)) & 0x0F;
+      uint16_t bits = (upper12 << 4) | crc4;
+      unsigned bufIdx = 0;
+      for(int bit = DSHOT_BITS - 1; bit >= 0; bit--){
+        for(int dma = 0; dma < DSHOT600_DMA_PER_ZRO; ++dma)
+          buffer[bufIdx++] = 0xFFFF;
+        for(int dma = DSHOT600_DMA_PER_ZRO; dma < DSHOT600_DMA_PER_ONE; ++dma){
+          bool bitval = !!(bits & (1<<bit));
+          buffer[bufIdx++] = bitval ? 0xFFFF : 0x0;
+        }
+        for(int dma = DSHOT600_DMA_PER_ONE; dma < DSHOT600_DMA_PER_BIT; ++dma)
+          buffer[bufIdx++] = 0x0;
+      }
       printf("RC-PWM:%i%%\n", pwm);
       write(fd, buffer, DMA_COUNT * DMA_BYTES_PER_CLOCK);
-      usleep(PWM_TX_TIME_US - DMA_TX_TIME_US);
+      //For showing DMA->CPU turnaround time
+      //uint16_t minibuffer[2] = {0xFFFF, 0x0};
+      //write(fd, minibuffer, 2 * DMA_BYTES_PER_CLOCK);
+      //usleep(100);
     }
   }
 }
