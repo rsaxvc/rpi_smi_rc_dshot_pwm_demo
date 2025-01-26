@@ -44,7 +44,6 @@ static void print_smi_settings(struct smi_settings *settings) {
 }
 
 int main(int argc, char **argv) {
-  int opt;
   int fd = open("/dev/smi", O_RDWR);
   if (fd < 0) fail("cant open");
   struct smi_settings settings;
@@ -60,23 +59,6 @@ int main(int argc, char **argv) {
   settings.write_strobe_time = WRITE_STROBE_CYCLES;
   settings.dma_enable = 1;
   settings.data_width = SMI_WIDTH_16BIT;
-
-  while ((opt = getopt(argc, argv, "b:e:s:h:p:wE:S:H:P:")) != -1) {
-    switch (opt) {
-    case 'E':
-      settings.write_setup_time = atoi(optarg);
-      break;
-    case 'S':
-      settings.write_strobe_time = atoi(optarg);
-      break;
-    case 'H':
-      settings.write_hold_time = atoi(optarg);
-      break;
-    case 'P':
-      settings.write_pace_time = atoi(optarg);
-      break;
-    }
-  }
 
   ret = ioctl(fd, BCM2835_SMI_IOC_WRITE_SETTINGS, &settings);
   if (ret != 0) fail("ioctl 2");
