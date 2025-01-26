@@ -62,18 +62,6 @@ int main(int argc, char **argv) {
 
   while ((opt = getopt(argc, argv, "b:e:s:h:p:wE:S:H:P:")) != -1) {
     switch (opt) {
-    case 'e':
-      settings.read_setup_time = atoi(optarg);
-      break;
-    case 's':
-      settings.read_strobe_time = atoi(optarg);
-      break;
-    case 'h':
-      settings.read_hold_time = atoi(optarg);
-      break;
-    case 'p':
-      settings.read_pace_time = atoi(optarg);
-      break;
     case 'E':
       settings.write_setup_time = atoi(optarg);
       break;
