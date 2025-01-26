@@ -293,6 +293,7 @@ int main(int argc, char **argv) {
     sender.configure_pwm();
     for(int pwm = 0; pwm < 100; ++pwm){
       int pwm_us = 1000 + 10 * pwm;
+      printf("Sending PWM %ius\n", pwm_us);
       sender.smi_send_pwmMicros_all(pwm_us);
       //sender.smi_send_pwmTicks_all(2022);
     }
